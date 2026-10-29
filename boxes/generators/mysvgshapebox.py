@@ -7,6 +7,7 @@ from pathlib import Path
 
 from boxes import *
 from boxes.generators.mysvgoutline import _SvgOutlineBase, svg_file_type
+from svgpathtools import Line
 
 
 class MySvgOutline(_SvgOutlineBase):
@@ -26,6 +27,9 @@ class MySvgOutline(_SvgOutlineBase):
             help="which SVG outline to use as the bottom")
         self.argparser.add_argument("--width", type=float, default=100.0,
                                     help="final bottom width in mm")
+        self.argparser.add_argument(
+            "--size_mode", choices=["inside", "outside"], default="outside",
+            help="treat width as the usable inside size or the outside SVG size")
         self.argparser.add_argument("--wall_height", type=float, default=35.0,
                                     help="height of the box walls in mm")
         self.argparser.add_argument(
@@ -35,9 +39,9 @@ class MySvgOutline(_SvgOutlineBase):
             "--wall_style", choices=["panels", "living_hinge"], default="panels",
             help="separate flat wall panels or one flexible living-hinge wall")
         self.argparser.add_argument(
-            "--bottom_joint", choices=["inside_finger_slots", "outside_edge"],
-            default="inside_finger_slots",
-            help="finger joints in the bottom, or a plain outside edge for gluing")
+            "--bottom_joint", choices=["inside_slots", "outside_open"],
+            default="inside_slots",
+            help="inside slots set back by material thickness, or open outside fingers")
         self.argparser.add_argument(
             "--wall_join", choices=["finger_joint", "butt_joint"], default="finger_joint",
             help="how the two ends of a living-hinge wall join together")
@@ -67,27 +71,28 @@ class MySvgOutline(_SvgOutlineBase):
             result.append(points[-1])
         return result
 
-    def _outline_points(self, paths):
+    def _panel_segments(self, paths):
         path, transform = paths[0]
-        raw = []
-        for segment in path:
-            steps = max(1, int(segment.length(error=1e-3) / 5.0))
-            for index in range(steps):
-                raw.append(self._point(segment.point(index / steps), transform, 0, 0, 1.0))
-        raw.append(self._point(path[-1].end, transform, 0, 0, 1.0))
-        xmin = min(point[0] for point in raw)
-        xmax = max(point[0] for point in raw)
-        ymin = min(point[1] for point in raw)
-        ymax = max(point[1] for point in raw)
-        scale = self.width / (xmax - xmin)
-        normalized = [((x - xmin) * scale, (ymax - y) * scale) for x, y in raw]
-        if math.hypot(normalized[0][0] - normalized[-1][0], normalized[0][1] - normalized[-1][1]) > 1e-4:
-            normalized.append(normalized[0])
-        return self._resample(normalized, max(self.panel_length, 5.0))
-
-    def _draw_bottom(self, paths, points):
         xmin, xmax, ymin, ymax = self._bounds(paths)
-        scale = self.width / (xmax - xmin)
+        requested_width = self.width + (2 * self.thickness if self.size_mode == "inside" else 0)
+        scale = requested_width / (xmax - xmin)
+
+        def point(position):
+            return self._point(position, transform, xmin, ymax, scale)
+
+        segments = [(point(segment.start), point(segment.end)) for segment in path
+                    if isinstance(segment, Line)]
+        if segments:
+            return segments, scale
+
+        # Curved-only drawings have no straight sides. Approximate them for panels.
+        raw = [point(segment.point(index / 8)) for segment in path for index in range(8)]
+        raw.append(point(path[-1].end))
+        sampled = self._resample(raw, max(self.panel_length, 5.0))
+        return list(zip(sampled, sampled[1:])), scale
+
+    def _draw_bottom(self, paths, panel_segments, scale):
+        xmin, xmax, ymin, ymax = self._bounds(paths)
         base_width = (xmax - xmin) * scale
         base_height = (ymax - ymin) * scale
         if self.move(base_width, base_height, "up", before=True):
@@ -96,10 +101,10 @@ class MySvgOutline(_SvgOutlineBase):
         for path, transform in paths:
             self._draw_path(path, transform, xmin, ymax, scale)
         self.ctx.stroke()
-        if self.bottom_joint == "inside_finger_slots":
-            center = (sum(point[0] for point in points[:-1]) / (len(points) - 1),
-                      sum(point[1] for point in points[:-1]) / (len(points) - 1))
-            for start, end in zip(points, points[1:]):
+        if self.bottom_joint == "inside_slots":
+            center = (sum((start[0] + end[0]) / 2 for start, end in panel_segments) / len(panel_segments),
+                      sum((start[1] + end[1]) / 2 for start, end in panel_segments) / len(panel_segments))
+            for start, end in panel_segments:
                 dx, dy = end[0] - start[0], end[1] - start[1]
                 length = math.hypot(dx, dy)
                 if length < 4 * self.thickness:
@@ -139,12 +144,12 @@ class MySvgOutline(_SvgOutlineBase):
         self.ctx.stroke()
         self.move(width, height, "right")
 
-    def _panel_walls(self, points):
-        for number, (start, end) in enumerate(zip(points, points[1:]), 1):
+    def _panel_walls(self, panel_segments):
+        for number, (start, end) in enumerate(panel_segments, 1):
             length = math.dist(start, end)
             if length < 4 * self.thickness:
                 continue
-            bottom = "f" if self.bottom_joint == "inside_finger_slots" else "e"
+            bottom = "f" if self.bottom_joint in ("inside_slots", "outside_open") else "e"
             self.rectangularWall(length, self.wall_height, bottom + "eee",
                                  move="right", label=f"wall {number}")
 
@@ -160,10 +165,10 @@ class MySvgOutline(_SvgOutlineBase):
         paths = self._select_paths(self._subpaths(svg_file))
         if len(paths) != 1:
             raise ValueError("Choose one outline for a shape box, not all outlines.")
-        points = self._outline_points(paths)
-        self._draw_bottom(paths, points)
-        perimeter = sum(math.dist(start, end) for start, end in zip(points, points[1:]))
+        panel_segments, scale = self._panel_segments(paths)
+        self._draw_bottom(paths, panel_segments, scale)
+        perimeter = sum(path.length(error=1e-3) for path, _ in paths) * scale
         if self.wall_style == "living_hinge":
             self._living_hinge_wall(perimeter)
         else:
-            self._panel_walls(points)
+            self._panel_walls(panel_segments)
