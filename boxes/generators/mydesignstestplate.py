@@ -5,17 +5,10 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-from boxes import *
+from boxes.generators import typetray
 
 
-class MyDesignsTestPlate(Boxes):
-    """A plain rectangular plate for verifying the My Designs category."""
+class MyDesignsTestPlate(typetray.TypeTray):
+    """Editable personal starting point with all TypeTray settings."""
 
     ui_group = "MyDesigns"
-
-    def __init__(self) -> None:
-        Boxes.__init__(self)
-        self.buildArgParser(x=100, y=60)
-
-    def render(self):
-        self.rectangularWall(self.x, self.y, "eeee", label="test plate")
