@@ -85,26 +85,41 @@ class MySvgOutline(_SvgOutlineBase):
             normalized.append(normalized[0])
         return self._resample(normalized, max(self.panel_length, 5.0))
 
-    def _draw_bottom(self, points):
-        self.set_source_color(Color.INNER_CUT)
-        self.ctx.move_to(*points[0])
-        for point in points[1:]:
-            self.ctx.line_to(*point)
-        self.ctx.stroke()
-        if self.bottom_joint != "inside_finger_slots":
+    def _draw_bottom(self, paths, points):
+        xmin, xmax, ymin, ymax = self._bounds(paths)
+        scale = self.width / (xmax - xmin)
+        base_width = (xmax - xmin) * scale
+        base_height = (ymax - ymin) * scale
+        if self.move(base_width, base_height, "up", before=True):
             return
-        for start, end in zip(points, points[1:]):
-            dx, dy = end[0] - start[0], end[1] - start[1]
-            length = math.hypot(dx, dy)
-            if length >= 4 * self.thickness:
-                self.fingerHolesAt(start[0], start[1], length,
+        self.set_source_color(Color.INNER_CUT)
+        for path, transform in paths:
+            self._draw_path(path, transform, xmin, ymax, scale)
+        self.ctx.stroke()
+        if self.bottom_joint == "inside_finger_slots":
+            center = (sum(point[0] for point in points[:-1]) / (len(points) - 1),
+                      sum(point[1] for point in points[:-1]) / (len(points) - 1))
+            for start, end in zip(points, points[1:]):
+                dx, dy = end[0] - start[0], end[1] - start[1]
+                length = math.hypot(dx, dy)
+                if length < 4 * self.thickness:
+                    continue
+                nx, ny = -dy / length, dx / length
+                midpoint = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
+                if (center[0] - midpoint[0]) * nx + (center[1] - midpoint[1]) * ny < 0:
+                    nx, ny = -nx, -ny
+                self.fingerHolesAt(start[0] + nx * self.thickness,
+                                   start[1] + ny * self.thickness, length,
                                    math.degrees(math.atan2(dy, dx)))
+        self.move(base_width, base_height, "up")
 
     def _living_hinge_wall(self, perimeter: float):
         width = perimeter + 2 * self.thickness
         height = self.wall_height
         end_edges = "eFef" if self.wall_join == "finger_joint" else "eeee"
-        self.rectangularWall(width, height, end_edges, move="up", label="living hinge wall")
+        if self.move(width, height, "right", before=True):
+            return
+        self.rectangularWall(width, height, end_edges, move="", label="living hinge wall")
         spacing = self.hinge_spacing
         bridge = self.hinge_bridge
         if self.material == "mdf_3mm" and spacing == 3.0:
@@ -112,18 +127,17 @@ class MySvgOutline(_SvgOutlineBase):
         if spacing <= bridge or bridge <= 0:
             raise ValueError("Living hinge spacing must be greater than bridge width.")
         self.set_source_color(Color.INNER_CUT)
-        with self.saved_context() as ctx:
-            ctx.translate(self.spacing, height + self.spacing)
-            count = int(width // spacing)
-            for index in range(1, count):
-                x = index * spacing
-                if index % 2:
-                    ctx.move_to(x, bridge)
-                    ctx.line_to(x, height - bridge * 2)
-                else:
-                    ctx.move_to(x, bridge * 2)
-                    ctx.line_to(x, height - bridge)
-            ctx.stroke()
+        count = int(width // spacing)
+        for index in range(1, count):
+            x = index * spacing
+            if index % 2:
+                self.ctx.move_to(x, bridge)
+                self.ctx.line_to(x, height - bridge * 2)
+            else:
+                self.ctx.move_to(x, bridge * 2)
+                self.ctx.line_to(x, height - bridge)
+        self.ctx.stroke()
+        self.move(width, height, "right")
 
     def _panel_walls(self, points):
         for number, (start, end) in enumerate(zip(points, points[1:]), 1):
@@ -147,7 +161,7 @@ class MySvgOutline(_SvgOutlineBase):
         if len(paths) != 1:
             raise ValueError("Choose one outline for a shape box, not all outlines.")
         points = self._outline_points(paths)
-        self._draw_bottom(points)
+        self._draw_bottom(paths, points)
         perimeter = sum(math.dist(start, end) for start, end in zip(points, points[1:]))
         if self.wall_style == "living_hinge":
             self._living_hinge_wall(perimeter)
