@@ -37,6 +37,7 @@ class UIGroup:
 
 
 ui_groups: list[UIGroup] = [
+    UIGroup("MyDesigns", "My Designs", description="Personal generators for this installation."),
     UIGroup("Box", "Boxes", image="UniversalBox"),
     UIGroup("FlexBox", "Boxes with flex", image="RoundedBox"),
     UIGroup("Tray", "Trays and Drawer Inserts", image="TypeTray"),
