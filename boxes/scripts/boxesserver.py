@@ -263,6 +263,10 @@ class BServer:
 <div class="clear"></div>
 <hr>
 <h2 style="margin: 0px 0px 0px 20px;">{_(name)}</h2>
+<div class="generator-controls">
+  <label>{_("Show preview")} <input id="preview_chk" type="checkbox" checked="checked"></label>
+  <label>{_("Show help")} <input id="help_chk" type="checkbox"></label>
+</div>
         <p class="help-details">{_(box.__doc__) if box.__doc__ else ""}</p>
 <form id="arguments" action="{action}" method="GET" rel="nofollow">
         """]
@@ -314,8 +318,6 @@ class BServer:
     <button type="button" onclick="preview_scale/=1.2; document.getElementById('preview_img').style.width = preview_scale + '%';">-</button>
     <button type="button" onclick="preview_scale*= 1.2; document.getElementById('preview_img').style.width = preview_scale + '%';" >+</button>
     <button type="button" onclick="preview_scale=100; document.getElementById('preview_img').style.width = preview_scale + '%';" >{_("Reset")}</button>
-    <span class="preview-option">{_("Preview")} <input id="preview_chk" type="checkbox" checked="checked"></span>
-    <span class="preview-option">{_("Show help")} <input id="help_chk" type="checkbox"></span>
   </div>
 <div style="overflow: auto;">
 <figure id="preview_figure" style="width: max-content;">

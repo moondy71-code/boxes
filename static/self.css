@@ -112,8 +112,11 @@ body:not(.show-help) .help-details {
     min-height: 2em;
 }
 
-.preview-option {
-    margin-left: 12px;
+.generator-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 10px 0 12px 20px;
 }
 
 .container {
