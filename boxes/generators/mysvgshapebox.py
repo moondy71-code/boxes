@@ -98,8 +98,20 @@ class MySvgOutline(_SvgOutlineBase):
         if self.move(base_width, base_height, "up", before=True):
             return
         self.set_source_color(Color.INNER_CUT)
-        for path, transform in paths:
-            self._draw_path(path, transform, xmin, ymax, scale)
+        if self.bottom_joint == "outside_open":
+            center = (sum((start[0] + end[0]) / 2 for start, end in panel_segments) / len(panel_segments),
+                      sum((start[1] + end[1]) / 2 for start, end in panel_segments) / len(panel_segments))
+            for path, transform in paths:
+                for segment in path:
+                    if isinstance(segment, Line):
+                        start = self._point(segment.start, transform, xmin, ymax, scale)
+                        end = self._point(segment.end, transform, xmin, ymax, scale)
+                        self._draw_open_notches(start, end, center)
+                    else:
+                        self._draw_path([segment], transform, xmin, ymax, scale)
+        else:
+            for path, transform in paths:
+                self._draw_path(path, transform, xmin, ymax, scale)
         self.ctx.stroke()
         if self.bottom_joint == "inside_slots":
             center = (sum((start[0] + end[0]) / 2 for start, end in panel_segments) / len(panel_segments),
@@ -113,10 +125,42 @@ class MySvgOutline(_SvgOutlineBase):
                 midpoint = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
                 if (center[0] - midpoint[0]) * nx + (center[1] - midpoint[1]) * ny < 0:
                     nx, ny = -nx, -ny
-                self.fingerHolesAt(start[0] + nx * self.thickness,
-                                   start[1] + ny * self.thickness, length,
+                self.fingerHolesAt(start[0] + nx * 5.0,
+                                   start[1] + ny * 5.0, length,
                                    math.degrees(math.atan2(dy, dx)))
         self.move(base_width, base_height, "up")
+
+    def _draw_open_notches(self, start, end, center):
+        """Draw edge-connected finger notches, one material thickness deep."""
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length < 4 * self.thickness:
+            self.ctx.move_to(*start)
+            self.ctx.line_to(*end)
+            return
+        ux, uy = dx / length, dy / length
+        nx, ny = -uy, ux
+        midpoint = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
+        if (center[0] - midpoint[0]) * nx + (center[1] - midpoint[1]) * ny < 0:
+            nx, ny = -nx, -ny
+        fingers, leftover = self.edges["f"].calcFingers(length, None)
+        finger_width = self.edges["f"].settings.finger
+        space = self.edges["f"].settings.space
+        position = 0.0
+        self.ctx.move_to(*start)
+        for number in range(fingers):
+            notch_start = leftover / 2 + number * (finger_width + space)
+            notch_end = notch_start + finger_width
+            if notch_start > position:
+                self.ctx.line_to(start[0] + ux * notch_start, start[1] + uy * notch_start)
+            self.ctx.line_to(start[0] + ux * notch_start + nx * self.thickness,
+                             start[1] + uy * notch_start + ny * self.thickness)
+            self.ctx.line_to(start[0] + ux * notch_end + nx * self.thickness,
+                             start[1] + uy * notch_end + ny * self.thickness)
+            self.ctx.line_to(start[0] + ux * notch_end, start[1] + uy * notch_end)
+            position = notch_end
+        if position < length:
+            self.ctx.line_to(*end)
 
     def _living_hinge_wall(self, perimeter: float):
         width = perimeter + 2 * self.thickness
