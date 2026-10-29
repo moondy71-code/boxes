@@ -165,6 +165,8 @@ class BServer:
         return self._languages
 
     def getLanguage(self, args, accept_language):
+        return gettext.NullTranslations()
+
         lang = None
         langs = []
 
@@ -207,7 +209,7 @@ class BServer:
             viewname = name[len(prefix) + 1:]
 
         default = defaults.get(name, None)
-        row = """<tr><td id="{}"><label for="{}">{}</label></td><td>%s</td><td id="{}">{}</td></tr>\n""".format(name + "_id", name, _(viewname), name + "_description", "" if not a.help else markdown.markdown(_(a.help)))
+        row = """<tr><td id="{}"><label for="{}">{}</label></td><td>%s</td><td class="help-details" id="{}">{}</td></tr>\n""".format(name + "_id", name, _(viewname), name + "_description", "" if not a.help else markdown.markdown(_(a.help)))
         if (isinstance(a, argparse._StoreAction) and
                 hasattr(a.type, "html")):
             input = a.type.html(name, default or a.default, _)
@@ -301,7 +303,7 @@ class BServer:
 
 <div class="clear"></div>
 <hr>
-<div class="description">
+<div class="description help-details">
 """)
         no_img_msg = _('There is no image yet. Please donate an image of your project on <a href=&quot;https://github.com/florianfesti/boxes/issues/628&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;>GitHub</a>!')
 
@@ -378,7 +380,7 @@ class BServer:
                 name = box.__name__
                 docs = ""
                 if box.__doc__:
-                    docs = " - " + _(box.__doc__)
+                    docs = " <span class=\"help-details\">- " + _(box.__doc__) + "</span>"
                 result.append(f"""     <li class="thumbnail" data-thumbnail="{self.static_url}/samples/{name}-thumb.jpg" id="search_id_{name}"><a href="{name}{langparam}">{_(name)}</a>{docs}</li>\n""")
             result.append("   </ul>\n  </div>\n")
         result.append(f"""
@@ -455,8 +457,8 @@ class BServer:
 
         return f"""
 <h1><a href="./{langparam}">{_("Boxes.py")}</a></h1>
-<p>{_("Create boxes and more with a laser cutter!")}</p>
-<p>
+<p class="help-details">{_("Create boxes and more with a laser cutter!")}</p>
+<p class="help-details">
 {_('''
         <a href="https://hackaday.io/project/10649-boxespy">Boxes.py</a> is an <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">Open Source</a> box generator written in <a href="https://www.python.org/">Python</a>. It features both finished parametrized generators as well as a Python API for writing your own. It features finger and (flat) dovetail joints, flex cuts, holes and slots for screws, hinges, gears, pulleys and much more.''')}
 </p>
@@ -494,7 +496,7 @@ class BServer:
         if preview:
             result.append(f'    <li class="right">{_("Preview")} <input id="preview_chk" type="checkbox" checked="checked"> </li>\n')
 
-        result.append(f'  <li class="right">{self.genHTMLLanguageSelection(lang)}  </li>\n')
+        result.append(f'    <li class="right">{_("Show help")} <input id="help_chk" type="checkbox"> </li>\n')
         return "".join(result)
 
     def genPageError(self, name, e, lang) -> list[bytes]:

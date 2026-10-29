@@ -81,6 +81,7 @@ function initThumbnail(el) {
 }
 
 function initPage(num_hide = null) {
+    initHelpToggle();
     const h = document.getElementsByClassName("toggle");
     let i = 0;
     for (let el of h) {
@@ -103,6 +104,18 @@ function initArgsPage(num_hide = null) {
     }
     refreshPreview();
     document.getElementById("preview_chk").addEventListener("change", togglePreview);
+}
+
+function initHelpToggle() {
+    const toggle = document.getElementById("help_chk");
+    if (!toggle) return;
+    const showHelp = localStorage.getItem("boxes-show-help") === "true";
+    toggle.checked = showHelp;
+    document.body.classList.toggle("show-help", showHelp);
+    toggle.addEventListener("change", function() {
+        localStorage.setItem("boxes-show-help", toggle.checked);
+        document.body.classList.toggle("show-help", toggle.checked);
+    });
 }
 
 /*** Preview ****************************************/

@@ -10,7 +10,8 @@ import tempfile
 from xml.etree import ElementTree as ET
 
 from boxes import *
-from svgpathtools import Arc, CubicBezier, Line, QuadraticBezier, parse_path
+import numpy
+from svgpathtools import Arc, CubicBezier, Line, QuadraticBezier, parse_path, parse_transform
 
 
 def svg_file_type(value: str) -> str:
@@ -19,8 +20,10 @@ def svg_file_type(value: str) -> str:
 
 def _svg_file_html(name: str, value: str, _: object) -> str:
     return f'''<input name="{name}" id="{name}" type="hidden" value="{value}">
+<div class="svg-file-control">
 <input id="{name}_picker" type="file" accept=".svg,image/svg+xml" onchange="uploadSvgFile(this)">
-<span id="{name}_status">Choose an SVG file</span>'''
+<span id="{name}_status">Choose an SVG file</span>
+</div>'''
 
 
 svg_file_type.html = _svg_file_html  # type: ignore[attr-defined]
@@ -45,25 +48,29 @@ class MySvgOutline(Boxes):
         self.argparser.add_argument(
             "--height", type=float, default=0.0,
             help="final outline height in mm (zero keeps the SVG proportions)")
-        self.argparser.add_argument(
-            "--operation", choices=["etch", "cut"], default="etch",
-            help="draw as an engraving line or a cut line")
-
     @staticmethod
     def _subpaths(svg_file: Path):
         root = ET.parse(svg_file).getroot()
         paths = []
-        for element in root.iter():
+
+        def collect(element, transform):
+            transform = transform @ parse_transform(element.get("transform"))
             if element.tag.endswith("path") and element.get("d"):
-                paths.extend(parse_path(element.get("d")).continuous_subpaths())
+                paths.extend((path, transform) for path in
+                             parse_path(element.get("d")).continuous_subpaths())
+            for child in element:
+                collect(child, transform)
+
+        collect(root, numpy.identity(3))
         if not paths:
             raise ValueError("The SVG does not contain a path outline.")
         return paths
 
     @staticmethod
-    def _area(path) -> float:
+    def _area(path_info) -> float:
+        path, transform = path_info
         try:
-            return abs(float(path.area()))
+            return abs(float(path.area()) * numpy.linalg.det(transform[:2, :2]))
         except AssertionError:
             xmin, xmax, ymin, ymax = path.bbox()
             return abs((xmax - xmin) * (ymax - ymin))
@@ -79,41 +86,44 @@ class MySvgOutline(Boxes):
 
     @staticmethod
     def _bounds(paths):
-        bounds = [path.bbox() for path in paths]
-        return (
-            min(b[0] for b in bounds), max(b[1] for b in bounds),
-            min(b[2] for b in bounds), max(b[3] for b in bounds),
-        )
+        points = []
+        for path, transform in paths:
+            xmin, xmax, ymin, ymax = path.bbox()
+            for x, y in ((xmin, ymin), (xmin, ymax), (xmax, ymin), (xmax, ymax)):
+                points.append(transform @ numpy.array([x, y, 1.0]))
+        return (min(point[0] for point in points), max(point[0] for point in points),
+                min(point[1] for point in points), max(point[1] for point in points))
 
     @staticmethod
-    def _point(point, xmin: float, ymax: float, scale: float) -> tuple[float, float]:
-        return ((point.real - xmin) * scale, (ymax - point.imag) * scale)
+    def _point(point, transform, xmin: float, ymax: float, scale: float) -> tuple[float, float]:
+        x, y, _ = transform @ numpy.array([point.real, point.imag, 1.0])
+        return ((x - xmin) * scale, (ymax - y) * scale)
 
-    def _draw_path(self, path, xmin: float, ymax: float, scale: float) -> None:
+    def _draw_path(self, path, transform, xmin: float, ymax: float, scale: float) -> None:
         ctx = self.ctx
         start = path[0].start
-        ctx.move_to(*self._point(start, xmin, ymax, scale))
+        ctx.move_to(*self._point(start, transform, xmin, ymax, scale))
         for segment in path:
             end = segment.end
             if isinstance(segment, Line):
-                ctx.line_to(*self._point(end, xmin, ymax, scale))
+                ctx.line_to(*self._point(end, transform, xmin, ymax, scale))
             elif isinstance(segment, QuadraticBezier):
                 start = segment.start
                 control = segment.control
                 control1 = start + 2.0 / 3.0 * (control - start)
                 control2 = end + 2.0 / 3.0 * (control - end)
-                ctx.curve_to(*self._point(control1, xmin, ymax, scale),
-                             *self._point(control2, xmin, ymax, scale),
-                             *self._point(end, xmin, ymax, scale))
+                ctx.curve_to(*self._point(control1, transform, xmin, ymax, scale),
+                             *self._point(control2, transform, xmin, ymax, scale),
+                             *self._point(end, transform, xmin, ymax, scale))
             elif isinstance(segment, CubicBezier):
-                ctx.curve_to(*self._point(segment.control1, xmin, ymax, scale),
-                             *self._point(segment.control2, xmin, ymax, scale),
-                             *self._point(end, xmin, ymax, scale))
+                ctx.curve_to(*self._point(segment.control1, transform, xmin, ymax, scale),
+                             *self._point(segment.control2, transform, xmin, ymax, scale),
+                             *self._point(end, transform, xmin, ymax, scale))
             elif isinstance(segment, Arc):
                 for curve in segment.as_cubic_curves():
-                    ctx.curve_to(*self._point(curve.control1, xmin, ymax, scale),
-                                 *self._point(curve.control2, xmin, ymax, scale),
-                                 *self._point(curve.end, xmin, ymax, scale))
+                    ctx.curve_to(*self._point(curve.control1, transform, xmin, ymax, scale),
+                                 *self._point(curve.control2, transform, xmin, ymax, scale),
+                                 *self._point(curve.end, transform, xmin, ymax, scale))
             else:
                 raise ValueError(f"Unsupported SVG segment: {type(segment).__name__}")
 
@@ -138,7 +148,7 @@ class MySvgOutline(Boxes):
             scale = min(scale, self.height / source_height)
 
         with self.saved_context() as ctx:
-            self.set_source_color(Color.INNER_CUT if self.operation == "cut" else Color.ETCHING)
-            for path in paths:
-                self._draw_path(path, xmin, ymax, scale)
+            self.set_source_color(Color.INNER_CUT)
+            for path, transform in paths:
+                self._draw_path(path, transform, xmin, ymax, scale)
             ctx.stroke()
