@@ -114,8 +114,8 @@ body:not(.show-help) .help-details {
 
 .generator-controls {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-direction: row;
+    gap: 12px;
     margin: 10px 0 12px 20px;
 }
 
