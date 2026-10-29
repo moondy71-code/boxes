@@ -71,6 +71,16 @@ class MySvgOutline(_SvgOutlineBase):
             result.append(points[-1])
         return result
 
+    @staticmethod
+    def _line_intersection(a, b, c, d):
+        rx, ry = b[0] - a[0], b[1] - a[1]
+        sx, sy = d[0] - c[0], d[1] - c[1]
+        denominator = rx * sy - ry * sx
+        if abs(denominator) < 1e-7:
+            return ((b[0] + c[0]) / 2, (b[1] + c[1]) / 2)
+        factor = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / denominator
+        return (a[0] + factor * rx, a[1] + factor * ry)
+
     def _panel_segments(self, paths):
         path, transform = paths[0]
         xmin, xmax, ymin, ymax = self._bounds(paths)
@@ -80,16 +90,26 @@ class MySvgOutline(_SvgOutlineBase):
         def point(position):
             return self._point(position, transform, xmin, ymax, scale)
 
-        segments = [(point(segment.start), point(segment.end)) for segment in path
+        attached = [(point(segment.start), point(segment.end)) for segment in path
                     if isinstance(segment, Line)]
-        if segments:
-            return segments, scale
+        def panels_from_attached(segments):
+            corners = [self._line_intersection(segments[index - 1][0], segments[index - 1][1],
+                                               start, end)
+                       for index, (start, end) in enumerate(segments)]
+            return [
+                {"start": corners[index], "end": corners[(index + 1) % len(corners)],
+                 "attach_start": start, "attach_end": end}
+                for index, (start, end) in enumerate(segments)
+            ]
+
+        if attached:
+            return panels_from_attached(attached), scale
 
         # Curved-only drawings have no straight sides. Approximate them for panels.
         raw = [point(segment.point(index / 8)) for segment in path for index in range(8)]
         raw.append(point(path[-1].end))
         sampled = self._resample(raw, max(self.panel_length, 5.0))
-        return list(zip(sampled, sampled[1:])), scale
+        return panels_from_attached(list(zip(sampled, sampled[1:]))), scale
 
     def _draw_bottom(self, paths, panel_segments, scale):
         xmin, xmax, ymin, ymax = self._bounds(paths)
@@ -99,8 +119,8 @@ class MySvgOutline(_SvgOutlineBase):
             return
         self.set_source_color(Color.INNER_CUT)
         if self.bottom_joint == "outside_open":
-            center = (sum((start[0] + end[0]) / 2 for start, end in panel_segments) / len(panel_segments),
-                      sum((start[1] + end[1]) / 2 for start, end in panel_segments) / len(panel_segments))
+            center = (sum((panel["attach_start"][0] + panel["attach_end"][0]) / 2 for panel in panel_segments) / len(panel_segments),
+                      sum((panel["attach_start"][1] + panel["attach_end"][1]) / 2 for panel in panel_segments) / len(panel_segments))
             for path, transform in paths:
                 for segment in path:
                     if isinstance(segment, Line):
@@ -114,9 +134,10 @@ class MySvgOutline(_SvgOutlineBase):
                 self._draw_path(path, transform, xmin, ymax, scale)
         self.ctx.stroke()
         if self.bottom_joint == "inside_slots":
-            center = (sum((start[0] + end[0]) / 2 for start, end in panel_segments) / len(panel_segments),
-                      sum((start[1] + end[1]) / 2 for start, end in panel_segments) / len(panel_segments))
-            for start, end in panel_segments:
+            center = (sum((panel["attach_start"][0] + panel["attach_end"][0]) / 2 for panel in panel_segments) / len(panel_segments),
+                      sum((panel["attach_start"][1] + panel["attach_end"][1]) / 2 for panel in panel_segments) / len(panel_segments))
+            for panel in panel_segments:
+                start, end = panel["attach_start"], panel["attach_end"]
                 dx, dy = end[0] - start[0], end[1] - start[1]
                 length = math.hypot(dx, dy)
                 if length < 4 * self.thickness:
@@ -189,13 +210,28 @@ class MySvgOutline(_SvgOutlineBase):
         self.move(width, height, "right")
 
     def _panel_walls(self, panel_segments):
-        for number, (start, end) in enumerate(panel_segments, 1):
+        for number, panel in enumerate(panel_segments, 1):
+            start, end = panel["start"], panel["end"]
+            attach_start, attach_end = panel["attach_start"], panel["attach_end"]
             length = math.dist(start, end)
+            attach_length = math.dist(attach_start, attach_end)
             if length < 4 * self.thickness:
                 continue
-            bottom = "f" if self.bottom_joint in ("inside_slots", "outside_open") else "e"
-            self.rectangularWall(length, self.wall_height, bottom + "eee",
-                                 move="right", label=f"wall {number}")
+            extension_start = math.dist(start, attach_start)
+            extension_end = math.dist(attach_end, end)
+            if self.move(length, self.wall_height, "right", before=True):
+                continue
+            self.edge(extension_start)
+            self.edges["f"](attach_length)
+            self.edge(extension_end)
+            self.corner(90)
+            self.edge(self.wall_height)
+            self.corner(90)
+            self.edge(length)
+            self.corner(90)
+            self.edge(self.wall_height)
+            self.corner(90)
+            self.move(length, self.wall_height, "right", label=f"wall {number}")
 
     def render(self):
         if not self.svg_file:
