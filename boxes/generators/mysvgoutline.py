@@ -6,10 +6,24 @@
 # (at your option) any later version.
 
 from pathlib import Path
+import tempfile
 from xml.etree import ElementTree as ET
 
 from boxes import *
 from svgpathtools import Arc, CubicBezier, Line, QuadraticBezier, parse_path
+
+
+def svg_file_type(value: str) -> str:
+    return value
+
+
+def _svg_file_html(name: str, value: str, _: object) -> str:
+    return f'''<input name="{name}" id="{name}" type="hidden" value="{value}">
+<input id="{name}_picker" type="file" accept=".svg,image/svg+xml" onchange="uploadSvgFile(this)">
+<span id="{name}_status">Choose an SVG file</span>'''
+
+
+svg_file_type.html = _svg_file_html  # type: ignore[attr-defined]
 
 
 class MySvgOutline(Boxes):
@@ -20,8 +34,8 @@ class MySvgOutline(Boxes):
     def __init__(self) -> None:
         Boxes.__init__(self)
         self.argparser.add_argument(
-            "--svg_file", type=str, default="",
-            help="full path to the SVG file on this computer")
+            "--svg_file", type=svg_file_type, default="",
+            help="choose an SVG file from this computer")
         self.argparser.add_argument(
             "--outline", choices=["outer", "first", "last", "all"], default="outer",
             help="which SVG outline to use")
@@ -71,42 +85,47 @@ class MySvgOutline(Boxes):
             min(b[2] for b in bounds), max(b[3] for b in bounds),
         )
 
-    def _draw_path(self, path, x_offset: float, y_offset: float, scale: float) -> None:
+    @staticmethod
+    def _point(point, xmin: float, ymax: float, scale: float) -> tuple[float, float]:
+        return ((point.real - xmin) * scale, (ymax - point.imag) * scale)
+
+    def _draw_path(self, path, xmin: float, ymax: float, scale: float) -> None:
         ctx = self.ctx
         start = path[0].start
-        ctx.move_to((start.real + x_offset) * scale, (start.imag + y_offset) * scale)
+        ctx.move_to(*self._point(start, xmin, ymax, scale))
         for segment in path:
             end = segment.end
             if isinstance(segment, Line):
-                ctx.line_to((end.real + x_offset) * scale, (end.imag + y_offset) * scale)
+                ctx.line_to(*self._point(end, xmin, ymax, scale))
             elif isinstance(segment, QuadraticBezier):
                 start = segment.start
                 control = segment.control
                 control1 = start + 2.0 / 3.0 * (control - start)
                 control2 = end + 2.0 / 3.0 * (control - end)
-                ctx.curve_to(
-                    (control1.real + x_offset) * scale, (control1.imag + y_offset) * scale,
-                    (control2.real + x_offset) * scale, (control2.imag + y_offset) * scale,
-                    (end.real + x_offset) * scale, (end.imag + y_offset) * scale,
-                )
+                ctx.curve_to(*self._point(control1, xmin, ymax, scale),
+                             *self._point(control2, xmin, ymax, scale),
+                             *self._point(end, xmin, ymax, scale))
             elif isinstance(segment, CubicBezier):
-                ctx.curve_to(
-                    (segment.control1.real + x_offset) * scale, (segment.control1.imag + y_offset) * scale,
-                    (segment.control2.real + x_offset) * scale, (segment.control2.imag + y_offset) * scale,
-                    (end.real + x_offset) * scale, (end.imag + y_offset) * scale,
-                )
+                ctx.curve_to(*self._point(segment.control1, xmin, ymax, scale),
+                             *self._point(segment.control2, xmin, ymax, scale),
+                             *self._point(end, xmin, ymax, scale))
             elif isinstance(segment, Arc):
                 for curve in segment.as_cubic_curves():
-                    self._draw_path(curve, x_offset, y_offset, scale)
+                    ctx.curve_to(*self._point(curve.control1, xmin, ymax, scale),
+                                 *self._point(curve.control2, xmin, ymax, scale),
+                                 *self._point(curve.end, xmin, ymax, scale))
             else:
                 raise ValueError(f"Unsupported SVG segment: {type(segment).__name__}")
 
     def render(self):
         if not self.svg_file:
-            raise ValueError("Choose an SVG file by entering its full path.")
-        svg_file = Path(self.svg_file).expanduser()
+            self.text("Choose an SVG file to preview your outline.", 0, 0,
+                      fontsize=8, color=Color.ETCHING)
+            return
+        upload_file = Path(tempfile.gettempdir()) / "boxes-my-designs" / self.svg_file
+        svg_file = upload_file if upload_file.is_file() else Path(self.svg_file).expanduser()
         if svg_file.suffix.lower() != ".svg" or not svg_file.is_file():
-            raise ValueError("SVG file not found. Check its full path.")
+            raise ValueError("SVG file not found. Choose the file again.")
 
         paths = self._select_paths(self._subpaths(svg_file))
         xmin, xmax, ymin, ymax = self._bounds(paths)
@@ -121,5 +140,5 @@ class MySvgOutline(Boxes):
         with self.saved_context() as ctx:
             self.set_source_color(Color.INNER_CUT if self.operation == "cut" else Color.ETCHING)
             for path in paths:
-                self._draw_path(path, -xmin, -ymin, scale)
+                self._draw_path(path, xmin, ymax, scale)
             ctx.stroke()

@@ -20,17 +20,21 @@ import gettext
 import glob
 import html
 import io
+import json
 import mimetypes
 import os.path
 import re
 import sys
+import tempfile
 import threading
 import time
 import traceback
+import uuid
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import quote, unquote_plus
 from wsgiref.simple_server import make_server
+from xml.etree import ElementTree as ET
 
 import markdown
 import qrcode
@@ -143,6 +147,8 @@ class BServer:
                 self.staticdir = Path(__file__).parent.parent.parent / "static"
         self._languages: list[str] | None = None
         self._cache: dict[Any, Any] = {}
+        self.svg_upload_dir = Path(tempfile.gettempdir()) / "boxes-my-designs"
+        self.svg_upload_dir.mkdir(parents=True, exist_ok=True)
         self.url_prefix = url_prefix
         self.static_url = static_url
         self.legal_url = legal_url
@@ -544,6 +550,27 @@ class BServer:
         f = static_file.open('rb')
         return environ['wsgi.file_wrapper'](f, 512 * 1024)
 
+    def serveSvgUpload(self, environ, start_response):
+        if environ.get("REQUEST_METHOD") != "POST":
+            start_response("405 Method Not Allowed", [('Content-type', 'application/json')])
+            return [b'{"error":"Use POST to upload an SVG."}']
+        try:
+            size = int(environ.get("CONTENT_LENGTH", "0"))
+            if size < 1 or size > 2 * 1024 * 1024:
+                raise ValueError("Choose an SVG smaller than 2 MB.")
+            data = environ["wsgi.input"].read(size)
+            root = ET.fromstring(data)
+            if not root.tag.endswith("svg") or not any(
+                    element.tag.endswith("path") and element.get("d") for element in root.iter()):
+                raise ValueError("Choose an SVG that contains a path outline.")
+            filename = f"{uuid.uuid4().hex}.svg"
+            (self.svg_upload_dir / filename).write_bytes(data)
+        except (ValueError, ET.ParseError) as error:
+            start_response("400 Bad Request", [('Content-type', 'application/json')])
+            return [json.dumps({"error": str(error)}).encode("utf-8")]
+        start_response("200 OK", [('Content-type', 'application/json')])
+        return [json.dumps({"filename": filename}).encode("utf-8")]
+
     def getURL(self, environ) -> str:
         url = environ['wsgi.url_scheme'] + '://'
 
@@ -627,6 +654,8 @@ class BServer:
             environ["PATH_INFO"] = "/static/favicon.ico"
         if environ["PATH_INFO"].startswith("/static/"):
             return self.serveStatic(environ, start_response)
+        if environ["PATH_INFO"] == "/upload-svg":
+            return self.serveSvgUpload(environ, start_response)
 
         status = '200 OK'
         headers = [('Content-type', 'text/html; charset=utf-8'), ('X-XSS-Protection', '1; mode=block'), ('X-Content-Type-Options', 'nosniff'), ('x-frame-options', 'SAMEORIGIN'), ('Referrer-Policy', 'no-referrer')]

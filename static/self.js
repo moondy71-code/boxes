@@ -129,6 +129,32 @@ function togglePreview() {
 	refreshPreview();
 }
 
+async function uploadSvgFile(input) {
+    const file = input.files[0];
+    const status = document.getElementById("svg_file_status");
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".svg")) {
+        status.textContent = "Please choose an SVG file.";
+        return;
+    }
+    status.textContent = "Loading SVG...";
+    try {
+        const uploadUrl = new URL("upload-svg", window.location.href);
+        const response = await fetch(uploadUrl, {
+            method: "POST",
+            headers: {"Content-Type": "image/svg+xml"},
+            body: file,
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not load this SVG.");
+        document.getElementById("svg_file").value = result.filename;
+        status.textContent = file.name + " is ready.";
+        refreshPreview();
+    } catch (error) {
+        status.textContent = error.message;
+    }
+}
+
 /*** GrindFinity ******************************************/
 
 function GridfinityTrayLayout_GenerateLayout(x, y, nx, ny, countx, county) {
