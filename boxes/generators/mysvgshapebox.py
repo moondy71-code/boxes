@@ -6,11 +6,11 @@ import math
 from pathlib import Path
 
 from boxes import *
-from boxes.generators.mysvgoutline import MySvgOutline, svg_file_type
+from boxes.generators.mysvgoutline import _SvgOutlineBase, svg_file_type
 
 
-class MySvgShapeBox(MySvgOutline):
-    """Create an open box from an SVG outline."""
+class MySvgOutline(_SvgOutlineBase):
+    """Import an SVG outline and create an open box from it."""
 
     ui_group = "MyDesigns"
 

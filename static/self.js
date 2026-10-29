@@ -487,7 +487,7 @@ function addCallbacks() {
         "TrayLayout": TrayLayoutInit,
         "GridfinityTrayLayout": GridfinityTrayLayoutInit,
         "PhotoFrame": PhotoFrameInit,
-        "MySvgShapeBox": MySvgShapeBoxInit,
+        "MySvgOutline": MySvgOutlineInit,
     };
     loc = new URL(window.location.href);
     pathname = loc.pathname;
@@ -498,7 +498,7 @@ function addCallbacks() {
     }
 }
 
-function MySvgShapeBoxInit() {
+function MySvgOutlineInit() {
     const material = document.getElementById("material");
     const spacing = document.getElementById("hinge_spacing");
     const bridge = document.getElementById("hinge_bridge");

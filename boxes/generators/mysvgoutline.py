@@ -29,10 +29,10 @@ def _svg_file_html(name: str, value: str, _: object) -> str:
 svg_file_type.html = _svg_file_html  # type: ignore[attr-defined]
 
 
-class MySvgOutline(Boxes):
-    """Import an SVG outline and choose which outline to use."""
+class _SvgOutlineBase(Boxes):
+    """Shared SVG outline import support for My Designs generators."""
 
-    ui_group = "MyDesigns"
+    webinterface = False
 
     def __init__(self) -> None:
         Boxes.__init__(self)
