@@ -13,6 +13,7 @@ class MySvgOutline(_SvgOutlineBase):
     """Import an SVG outline and create an open box from it."""
 
     ui_group = "MyDesigns"
+    webinterface = True
 
     def __init__(self) -> None:
         Boxes.__init__(self)
