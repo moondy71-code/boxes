@@ -87,13 +87,13 @@ table tr p {
     margin-right: 20px;
     padding: 10px;
     padding-bottom: 15px;
-    width: 700px;
+    width: 520px;
     border-radius: 30px;
     box-shadow: 0 0 5px 0 #333333;
 }
 
 body.show-help .argumentcontainer {
-    width: 996px;
+    width: 860px;
 }
 
 body:not(.show-help) .help-details {
@@ -106,9 +106,14 @@ body:not(.show-help) .help-details {
 
 .svg-file-control {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
     min-height: 2em;
+}
+
+.preview-option {
+    margin-left: 12px;
 }
 
 .container {

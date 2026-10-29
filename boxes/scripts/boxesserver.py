@@ -262,15 +262,8 @@ class BServer:
 <div>
 <div class="clear"></div>
 <hr>
-<div class="linkbar">
-<ul>
-{self.genLinks(lang, True)}
-</ul>
-</div>
-<hr>
-
 <h2 style="margin: 0px 0px 0px 20px;">{_(name)}</h2>
-        <p>{_(box.__doc__) if box.__doc__ else ""}</p>
+        <p class="help-details">{_(box.__doc__) if box.__doc__ else ""}</p>
 <form id="arguments" action="{action}" method="GET" rel="nofollow">
         """]
         groupid = 0
@@ -290,8 +283,6 @@ class BServer:
             groupid += 1
 
         result.append(f"""
-<input type="hidden" name="language" id="language" value="{lang_name}">
-
 <p>
     <button name="render" value="1" formtarget="_blank">{_("Generate")}</button>
     <button name="render" value="2" formtarget="_self">{_("Download")}</button>
@@ -323,6 +314,8 @@ class BServer:
     <button type="button" onclick="preview_scale/=1.2; document.getElementById('preview_img').style.width = preview_scale + '%';">-</button>
     <button type="button" onclick="preview_scale*= 1.2; document.getElementById('preview_img').style.width = preview_scale + '%';" >+</button>
     <button type="button" onclick="preview_scale=100; document.getElementById('preview_img').style.width = preview_scale + '%';" >{_("Reset")}</button>
+    <span class="preview-option">{_("Preview")} <input id="preview_chk" type="checkbox" checked="checked"></span>
+    <span class="preview-option">{_("Show help")} <input id="help_chk" type="checkbox"></span>
   </div>
 <div style="overflow: auto;">
 <figure id="preview_figure" style="width: max-content;">
@@ -483,20 +476,7 @@ class BServer:
 
     def genLinks(self, lang, preview=False):
         _ = lang.gettext
-        links = [("https://florianfesti.github.io/boxes/html/usermanual.html", _("Help")),
-                 ("https://hackaday.io/project/10649-boxespy", _("Home Page")),
-                 ("https://florianfesti.github.io/boxes/html/index.html", _("Documentation")),
-                 ("https://github.com/florianfesti/boxes", _("Sources"))]
-        if self.legal_url:
-            links.append((self.legal_url, _("Legal")))
-        links.append(("https://florianfesti.github.io/boxes/html/give_back.html", _("Give Back")))
-
-        result = [f'  <li><a href="{url}" target="_blank" rel="noopener">{txt}</a></li>\n' for url, txt in links]
-
-        if preview:
-            result.append(f'    <li class="right">{_("Preview")} <input id="preview_chk" type="checkbox" checked="checked"> </li>\n')
-
-        result.append(f'    <li class="right">{_("Show help")} <input id="help_chk" type="checkbox"> </li>\n')
+        result = [f'    <li class="right">{_("Show help")} <input id="help_chk" type="checkbox"> </li>\n']
         return "".join(result)
 
     def genPageError(self, name, e, lang) -> list[bytes]:
