@@ -487,6 +487,7 @@ function addCallbacks() {
         "TrayLayout": TrayLayoutInit,
         "GridfinityTrayLayout": GridfinityTrayLayoutInit,
         "PhotoFrame": PhotoFrameInit,
+        "MySvgShapeBox": MySvgShapeBoxInit,
     };
     loc = new URL(window.location.href);
     pathname = loc.pathname;
@@ -495,6 +496,23 @@ function addCallbacks() {
         callback = page_callbacks[page];
         callback();
     }
+}
+
+function MySvgShapeBoxInit() {
+    const material = document.getElementById("material");
+    const spacing = document.getElementById("hinge_spacing");
+    const bridge = document.getElementById("hinge_bridge");
+    if (!material || !spacing || !bridge) return;
+    material.addEventListener("change", function() {
+        if (material.value === "mdf_3mm") {
+            spacing.value = "2.4";
+            bridge.value = "1.2";
+        } else {
+            spacing.value = "3.0";
+            bridge.value = "1.0";
+        }
+        refreshPreview();
+    });
 }
 
 /*** Search for generators **************************************/
